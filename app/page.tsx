@@ -55,16 +55,17 @@ export default function DigitalJournalApp() {
   const [textNotes, setTextNotes] = useState<TextNote[]>([]);
 
   // BÚT VẼ, HÌNH DẠNG & MÀU SẮC (PAINT STYLE)
-  const [activeTool, setActiveTool] = useState<"select" | "pen" | "highlighter" | "eraser" | "shape">("select");
+  const [activeTool, setActiveTool] = useState<"select" | "text" | "pen" | "highlighter" | "eraser" | "shape">("select");
   const [selectedShape, setSelectedShape] = useState<"line" | "arrow" | "rect" | "circle" | "star" | "bubble">("rect");
   const [brushColor, setBrushColor] = useState("#f43f5e");
   const [brushSize, setBrushSize] = useState(3);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
-// Hàm click vào trang sổ để tạo Text Box tự do
+
+// Hàm click vào trang sổ để tạo Text Box (Chỉ chạy khi chọn công cụ "text")
   const handleJournalClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool !== "select") return;
+    if (activeTool !== "text") return; // <- CHỈ TẠO KHI CHỌN NÚT VĂN BẢN (T)
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -453,21 +454,55 @@ export default function DigitalJournalApp() {
       <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
         
         {/* NHÓM BÚT VẼ & CHỌN DỤNG CỤ */}
-        <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-          <button onClick={() => setActiveTool("select")} className={`px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${activeTool === "select" ? "bg-pink-600 text-white" : "text-slate-400 hover:bg-slate-800"}`}>
-            Con Trỏ
-          </button>
-          <button onClick={() => setActiveTool("pen")} className={`px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${activeTool === "pen" ? "bg-pink-600 text-white" : "text-slate-400 hover:bg-slate-800"}`}>
-            <PenTool className="w-3.5 h-3.5" /> Bút Viết
-          </button>
-          <button onClick={() => setActiveTool("highlighter")} className={`px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${activeTool === "highlighter" ? "bg-amber-400 text-slate-900 font-bold" : "text-slate-400 hover:bg-slate-800"}`}>
-            <Highlighter className="w-3.5 h-3.5" /> Dạ Quang
-          </button>
-          <button onClick={() => setActiveTool("eraser")} className={`px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 ${activeTool === "eraser" ? "bg-red-500 text-white" : "text-slate-400 hover:bg-slate-800"}`}>
-            Tẩy
-          </button>
-        </div>
+      <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
+        <button 
+          onClick={() => setActiveTool("select")} 
+          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all ${
+            activeTool === "select" ? "bg-pink-600 text-white shadow-md" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          Con Trỏ
+        </button>
 
+        {/* THÊM NÚT VĂN BẢN MỚI TẠI ĐÂY */}
+        <button 
+          onClick={() => setActiveTool("text")} 
+          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all ${
+            activeTool === "text" ? "bg-pink-600 text-white shadow-md" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          ✍️ Văn Bản
+        </button>
+
+        {/* ĐỔI BÚT VIẾT THÀNH BÚT VẼ */}
+        <button 
+          onClick={() => setActiveTool("pen")} 
+          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all ${
+            activeTool === "pen" ? "bg-pink-600 text-white shadow-md" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          <PenTool className="w-3.5 h-3.5" /> Bút Vẽ
+        </button>
+
+        <button 
+          onClick={() => setActiveTool("highlighter")} 
+          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all ${
+            activeTool === "highlighter" ? "bg-pink-600 text-white shadow-md" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          <Highlighter className="w-3.5 h-3.5" /> Dạ Quang
+        </button>
+
+        <button 
+          onClick={() => setActiveTool("eraser")} 
+          className={`px-2.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all ${
+            activeTool === "eraser" ? "bg-pink-600 text-white shadow-md" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          Tẩy
+        </button>
+      </div>
+      
         {/* NHÓM HÌNH DẠNG SHAPES (PAINT STYLE) */}
         <div className="flex items-center gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
           <span className="text-[10px] text-slate-500 px-1">Hình dạng:</span>
@@ -659,7 +694,7 @@ export default function DigitalJournalApp() {
                 </div>
               </Rnd>
             ))}
-            
+
             {/* LỚP VẼ CANVAS */}
             <canvas
               ref={canvasRef}
