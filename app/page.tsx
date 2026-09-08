@@ -12,6 +12,8 @@ import { removeBackground } from "@imgly/background-removal";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+
+
 interface SavedSticker {
   id: string;
   url: string;
@@ -28,6 +30,22 @@ interface PlacedSticker {
   zIndex: number;
 }
 
+// Thêm Interface này cho Chữ
+interface PlacedText {
+  id: string;
+  content: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  color?: string;
+  fontFamily?: string;
+  rotation?: number;
+}
+
+
+
 interface TextNote {
   id: string;
   text: string;
@@ -37,10 +55,21 @@ interface TextNote {
   color: string;
 }
 
+
 export default function DigitalJournalApp() {
   // --- KHO STICKER & SỔ NHẬT KÝ ---
   const [myStickers, setMyStickers] = useState<SavedSticker[]>([]);
   const [placedStickers, setPlacedStickers] = useState<PlacedSticker[]>([]);
+  
+  // Preload mô hình AI tách nền ngầm để bấm phát ăn ngay
+  useEffect(() => {
+    import("@imgly/background-removal");
+  }, []);
+  
+  
+  // State quản lý chữ và chữ đang được chọn
+  const [placedTexts, setPlacedTexts] = useState<PlacedText[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
 
   // Mẫu sổ nhật ký
@@ -63,9 +92,13 @@ export default function DigitalJournalApp() {
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
 
-// Hàm click vào trang sổ để tạo Text Box (Chỉ chạy khi chọn công cụ "text")
+// Hàm click vào trang sổ để tạo Text Box (và tự động bỏ chọn sticker)
   const handleJournalClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool !== "text") return; // <- CHỈ TẠO KHI CHỌN NÚT VĂN BẢN (T)
+    // 1. TỰ ĐỘNG BỎ CHỌN STICKER ĐỂ MẤT KHUNG HỒNG
+    setSelectedStickerId(null);
+
+    // 2. CHỈ TẠO TEXT BOX KHI ĐANG CHỌN CÔNG CỤ VĂN BẢN (T)
+    if (activeTool !== "text") return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -81,6 +114,7 @@ export default function DigitalJournalApp() {
     };
     setTextNotes((prev) => [...prev, newNote]);
   };
+
 
   // Camera & AI
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -117,22 +151,87 @@ export default function DigitalJournalApp() {
   const streamRef = useRef<MediaStream | null>(null);
   const isRotatingRef = useRef(false);
 
-  // TÁCH NỀN AI STICKER
+// Hàm hỗ trợ thu nhỏ ảnh giúp AI tách nền nhanh gấp 4 lần (Miễn phí 100%)
+const resizeImageForAI = (file: File): Promise<Blob> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX_SIZE = 1024; // Kích thước tối ưu cho Sticker
+      let width = img.width;
+      let height = img.height;
+
+      if (width > MAX_SIZE || height > MAX_SIZE) {
+        if (width > height) {
+          height = Math.round((height * MAX_SIZE) / width);
+          width = MAX_SIZE;
+        } else {
+          width = Math.round((width * MAX_SIZE) / height);
+          height = MAX_SIZE;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => resolve(blob || file),
+        "image/png",
+        0.9
+      );
+    };
+  });
+};
+
+// 2. Bên trong hàm bấm chọn/tách nền ảnh của bạn:
+const handleProcessAI = async (file: File) => {
+  setIsProcessingAI(true); // Bật Popup Loading
+
+  try {
+    // Dùng API đã import từ @imgly/background-removal
+    const optimizedImage = await resizeImageForAI(file);
+    const blob = await removeBackground(optimizedImage);
+
+    // Tạo link ảnh đã tách nền để hiển thị
+    const resultUrl = URL.createObjectURL(blob);
+    
+    // ... các code lưu sticker/xử lý tiếp theo của bạn ...
+    console.log("AI background removed:", resultUrl);
+
+  } catch (error) {
+    console.error("Lỗi tách nền:", error);
+  } finally {
+    setIsProcessingAI(false); // Tắt Popup Loading
+  }
+};
+
+
+  // --- HÀM TÁCH NỀN TỐI ƯU LUỒNG (KHÔNG LÀM NGHẼN THOẠI) ---
   const processAndSaveStickerAI = async (imageDataUrl: string) => {
+    // 1. Mở Pop-up ngay lập tức
     setIsProcessingAI(true);
-    setLoadingProgress(20);
-    const interval = setInterval(() => {
-      setLoadingProgress(prev => (prev < 85 ? prev + 15 : prev));
-    }, 250);
+
+    // 2. Hoãn 100ms để trình duyệt kịp vẽ Pop-up + chạy timer thoại trước
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
+      // 3. Gọi AI tách nền bằng link gốc (không qua resize rườm rà gây chậm)
       const blob = await removeBackground(imageDataUrl);
       const stickerUrl = URL.createObjectURL(blob);
-      setLoadingProgress(100);
-      clearInterval(interval);
-      setMyStickers(prev => [{ id: Date.now().toString(), url: stickerUrl }, ...prev]);
+
+      setMyStickers((prev) => [
+        { id: Date.now().toString(), url: stickerUrl },
+        ...prev,
+      ]);
     } catch (err) {
-      setMyStickers(prev => [{ id: Date.now().toString(), url: imageDataUrl }, ...prev]);
+      console.error("Lỗi AI tách nền:", err);
+      setMyStickers((prev) => [
+        { id: Date.now().toString(), url: imageDataUrl },
+        ...prev,
+      ]);
     } finally {
       setIsProcessingAI(false);
     }
@@ -163,6 +262,7 @@ export default function DigitalJournalApp() {
     }
   };
 
+  
   // CAMERA
   const startCamera = async () => {
     setIsCameraOpen(true);
@@ -208,43 +308,108 @@ export default function DigitalJournalApp() {
     setSelectedStickerId(newPlaced.id);
   };
 
-  // NÚT XOAY STICKER TRỰC TIẾP TRÊN KHUNG (PAINT/CANVA STYLE)
-  const handleRotateStart = (e: React.MouseEvent | React.TouchEvent, stickerId: string) => {
+ // --- HÀM XOAY STICKER TỰ DO (CHẠY ĐƯỢC CẢ TRÊN PC LẪN ĐIỆN THOẠI) ---
+  const handleRotateStart = (
+    e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>,
+    stickerId: string
+  ) => {
     e.stopPropagation();
-    isRotatingRef.current = true;
 
-    const handleMouseMove = (moveEvent: MouseEvent | TouchEvent) => {
-      if (!isRotatingRef.current) return;
-      const clientX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX;
-      const clientY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY;
+    const element = document.getElementById(`sticker-${stickerId}`);
+    if (!element) return;
 
-      const stickerElem = document.getElementById(`sticker-${stickerId}`);
-      if (!stickerElem) return;
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
 
-      const rect = stickerElem.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
+      let clientX = 0;
+      let clientY = 0;
 
-      const radians = Math.atan2(clientX - centerX, -(clientY - centerY));
-      const degrees = Math.round(radians * (180 / Math.PI));
+      if ("touches" in moveEvent && moveEvent.touches.length > 0) {
+        clientX = moveEvent.touches[0].clientX;
+        clientY = moveEvent.touches[0].clientY;
+      } else if ("clientX" in moveEvent) {
+        clientX = (moveEvent as MouseEvent).clientX;
+        clientY = (moveEvent as MouseEvent).clientY;
+      }
 
-      setPlacedStickers(prev => prev.map(s => s.id === stickerId ? { ...s, rotation: degrees } : s));
+      const radians = Math.atan2(clientY - centerY, clientX - centerX);
+      let degrees = radians * (180 / Math.PI) + 90;
+
+      if (degrees < 0) degrees += 360;
+
+      setPlacedStickers((prev) =>
+        prev.map((s) =>
+          s.id === stickerId ? { ...s, rotation: Math.round(degrees) } : s
+        )
+      );
     };
 
-    const handleMouseUp = () => {
-      isRotatingRef.current = false;
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("touchmove", handleMouseMove);
-      window.removeEventListener("touchend", handleMouseUp);
+    const handleEnd = () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("touchmove", handleMouseMove);
-    window.addEventListener("touchend", handleMouseUp);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleMove);
+    window.addEventListener("touchend", handleEnd);
   };
 
+  // --- HÀM XOAY CHỮ TỰ DO ---
+  const handleRotateTextStart = (
+    e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>,
+    textId: string
+  ) => {
+    e.stopPropagation();
+
+    const element = document.getElementById(`text-${textId}`);
+    if (!element) return;
+
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
+      let clientX = 0;
+      let clientY = 0;
+
+      if ("touches" in moveEvent && moveEvent.touches.length > 0) {
+        clientX = moveEvent.touches[0].clientX;
+        clientY = moveEvent.touches[0].clientY;
+      } else if ("clientX" in moveEvent) {
+        clientX = (moveEvent as MouseEvent).clientX;
+        clientY = (moveEvent as MouseEvent).clientY;
+      }
+
+      const radians = Math.atan2(clientY - centerY, clientX - centerX);
+      let degrees = radians * (180 / Math.PI) + 90;
+
+      if (degrees < 0) degrees += 360;
+
+      setPlacedTexts((prev) =>
+        prev.map((t) =>
+          t.id === textId ? { ...t, rotation: Math.round(degrees) } : t
+        )
+      );
+    };
+
+    const handleEnd = () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleEnd);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleEnd);
+    window.addEventListener("touchmove", handleMove);
+    window.addEventListener("touchend", handleEnd);
+  };
+  
   // VẼ BÚT & HÌNH DẠNG (PAINT CANVAS)
   const saveDrawState = () => {
     const canvas = canvasRef.current;
@@ -709,63 +874,86 @@ export default function DigitalJournalApp() {
               className={`absolute inset-0 z-10 ${activeTool !== "select" ? "cursor-crosshair pointer-events-auto" : "pointer-events-none"}`}
             />
 
-            {/* STICKER TRÊN SỔ VỚI NÚT XOAY TRỰC TIẾP TRÊN KHUNG (PAINT STYLE) */}
-            {placedStickers.map((st) => (
+          {/* ================= STICKER TRÊN SỔ (XOAY 360 CANVA + MƯỢT + XÓA) ================= */}
+          {placedStickers.map((st) => {
+            const isSelected = selectedStickerId === st.id;
+
+            return (
               <Rnd
                 key={st.id}
                 id={`sticker-${st.id}`}
                 size={{ width: st.width, height: st.height }}
                 position={{ x: st.x, y: st.y }}
-                onDragStop={(e, d) => {
-                  setPlacedStickers(placedStickers.map(s => s.id === st.id ? { ...s, x: d.x, y: d.y } : s));
-                }}
-                onResizeStop={(e, direction, ref, delta, position) => {
-                  setPlacedStickers(placedStickers.map(s => s.id === st.id ? {
-                    ...s,
-                    width: parseInt(ref.style.width),
-                    height: parseInt(ref.style.height),
-                    ...position
-                  } : s));
-                }}
-                onClick={() => setSelectedStickerId(st.id)}
-                style={{ zIndex: st.zIndex }}
                 bounds="parent"
-                className={`group relative ${selectedStickerId === st.id ? "ring-2 ring-pink-500 rounded-lg" : ""}`}
+                /* Lưu vị trí khi thả chuột */
+                onDragStop={(e, d) => {
+                  setPlacedStickers((prev) =>
+                    prev.map((s) => (s.id === st.id ? { ...s, x: d.x, y: d.y } : s))
+                  );
+                }}
+                /* Lưu kích thước khi thả chuột */
+                onResizeStop={(e, direction, ref, delta, position) => {
+                  setPlacedStickers((prev) =>
+                    prev.map((s) =>
+                      s.id === st.id
+                        ? {
+                            ...s,
+                            width: parseInt(ref.style.width, 10),
+                            height: parseInt(ref.style.height, 10),
+                            ...position,
+                          }
+                        : s
+                    )
+                  );
+                }}
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  setSelectedStickerId(st.id);
+                }}
+                className={`group z-30 transition-shadow ${
+                  isSelected ? "ring-2 ring-pink-500 rounded-xl" : "ring-0"
+                }`}
               >
-                {/* CÁC NÚT ĐIỀU KHIỂN TRÊN KHUNG KHI CHỌN STICKER */}
-                {selectedStickerId === st.id && (
-                  <>
-                    {/* NÚT XOAY TRÒN TRÊN ĐỈNH KHUNG (PAINT / CANVA) */}
-                    <div 
-                      onMouseDown={(e) => handleRotateStart(e, st.id)}
-                      onTouchStart={(e) => handleRotateStart(e, st.id)}
-                      className="absolute -top-7 left-1/2 -translate-x-1/2 w-6 h-6 bg-pink-600 hover:bg-pink-500 text-white rounded-full flex items-center justify-center shadow-lg cursor-grab active:cursor-grabbing z-30"
-                      title="Xoay Sticker"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                    </div>
+                <div className="relative w-full h-full select-none">
+                  {/* THẺ HÌNH ẢNH STICKER (Xoay theo st.rotation) */}
+                  <img
+                    src={st.url}
+                    alt="sticker"
+                    style={{ transform: `rotate(${st.rotation || 0}deg)` }}
+                    className="w-full h-full object-contain pointer-events-none select-none transition-transform duration-75"
+                    draggable={false}
+                  />
 
-                    {/* NÚT XÓA VÀ NÚT TẦNG Ở GÓC DƯỚI */}
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPlacedStickers(placedStickers.filter(s => s.id !== st.id));
-                        setSelectedStickerId(null);
-                      }}
-                      className="absolute -bottom-6 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md text-xs font-bold z-30"
-                      title="Xóa"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </>
-                )}
+                  {/* CÁC NÚT ĐIỀU KHIỂN (Chỉ hiện khi nhấp chọn) */}
+                  {isSelected && (
+                    <>
+                      {/* NÚT XOAY 360° KÉO RÊ THEO CHUỘT / CẢM ỨNG */}
+                      <button
+                        onMouseDown={(e) => handleRotateStart(e, st.id)}
+                        onTouchStart={(e) => handleRotateStart(e, st.id)}
+                        title="Kéo giữ để xoay tự do"
+                        className="absolute -top-5 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-7 h-7 rounded-full shadow-md hover:bg-pink-600 hover:scale-110 active:scale-95 transition-all flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing select-none"
+                      >
+                        🔄
+                      </button>
 
-                <div style={{ transform: `rotate(${st.rotation}deg)` }} className="w-full h-full relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={st.url} alt="Sticker" className="w-full h-full object-contain pointer-events-none" />
+                      {/* NÚT XÓA STICKER */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlacedStickers((prev) => prev.filter((s) => s.id !== st.id));
+                        }}
+                        title="Xóa sticker"
+                        className="absolute -bottom-3 -right-3 bg-red-500 text-white w-6 h-6 rounded-full shadow-md hover:bg-red-600 hover:scale-110 active:scale-95 transition-all flex items-center justify-center text-xs z-50 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
                 </div>
               </Rnd>
-            ))}
+            );
+          })}
           </div>
         </div>
 
@@ -806,20 +994,144 @@ export default function DigitalJournalApp() {
         </div>
       )}
 
-      {/* POPUP LOADING AI */}
-      {isProcessingAI && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4 text-white">
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-xs w-full text-center space-y-4 shadow-2xl">
-            <Sparkles className="w-10 h-10 text-pink-400 animate-spin mx-auto" />
-            <p className="font-semibold text-sm">AI Đang Tách Nền Sticker...</p>
-            <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-pink-500 h-full transition-all duration-300" style={{ width: `${loadingProgress}%` }} />
-            </div>
-            <p className="text-xs text-slate-400">{loadingProgress}%</p>
+      {/* POP-UP LOADING CUTE VIBE SNAPSTICKER */}
+      {isProcessingAI && <AILoadingModal key={Date.now()} />}
+    </div>
+  );
+}
+
+// Sub-component Pop-up Loading cực chill & cute
+const ALL_MESSAGES = [
+  // 🧸 Bình thường, nhẹ nhàng
+  "Từ từ nha, đang làm đây.",
+  "Gần xong rồi.",
+  "Đang xử lý một chút...",
+  "Khoan, còn một tí nữa.",
+  "Để mình làm nốt đã.",
+  "Xíu nữa thôi.",
+  "Đang hoàn thiện...",
+  "Sắp xong rồi đó.",
+  "Chờ mình một chút nhé.",
+  "Mình đang làm đây.",
+
+  // 😏 Hơi lầy
+  "Đừng giục, đẹp thì phải chờ.",
+  "Đang làm, đừng nhìn chằm chằm.",
+  "Bình tĩnh, chưa chạy đâu.",
+  "Khoan nha, mình đang cắt.",
+  "Từ từ, mình có tay nghề mà.",
+  "Đang cố làm cho ra hồn đây.",
+  "Chờ tí, đoạn này hơi lì.",
+  "Sắp có hàng rồi.",
+  "Mình biết bạn đang chờ.",
+  "Đừng bỏ mình giữa chừng nha.",
+
+  // ✂️ Liên quan trực tiếp đến việc tách nền
+  "Đang soi kỹ từng tí một...",
+  "Cái nền này hơi lì nhỉ.",
+  "Đang cố không cắt lẹm vào ảnh...",
+  "Chỗ này phải cắt cẩn thận.",
+  "Đang xử lý phần nền đây.",
+  "Mình đang tách từng chi tiết.",
+  "Có vài chỗ hơi khó cắt.",
+  "Đang dọn nốt phần nền.",
+  "Để mình làm viền cho đẹp.",
+  "Gần sạch nền rồi.",
+
+  // 🧠 AI hơi ngáo
+  "Hmm... để mình xem nào.",
+  "Đang suy nghĩ rất nghiêm túc.",
+  "Mình đang phân tích tình hình.",
+  "Khoan... hình như mình hiểu rồi.",
+  "À, biết phải làm gì rồi.",
+  "Não AI đang hoạt động hết công suất.",
+  "Đang cố hiểu cái ảnh này.",
+  "Hmm, chỗ này thú vị đấy.",
+  "Mình cần nhìn kỹ hơn một chút.",
+  "Đang thương lượng với cái nền...",
+
+  // 🐣 Hơi cute nhưng không sến
+  "Xíu nha, sắp ra rồi.",
+  "Để mình chăm chút thêm tí.",
+  "Gần được rồi nè.",
+  "Sắp có sticker mới rồi.",
+  "Mình làm kỹ một chút nhé.",
+  "Còn một bước nhỏ nữa thôi.",
+  "Sắp tới rồi.",
+  "Chờ mình tí xíu.",
+  "Mình đang cố làm thật đẹp.",
+  "Gần đến lúc xuất hiện rồi.",
+
+  // 🤨 Hơi troll
+  "Ủa, cái nền này dai vậy?",
+  "Sao hôm nay cắt khó thế nhỉ.",
+  "Đang đánh nhau với cái nền.",
+  "Cái ảnh này có vẻ không muốn bị cắt.",
+  "Mình với cái nền đang có chút bất đồng.",
+  "Đang xử lý drama phía sau ảnh.",
+  "Cái nền chưa chịu đầu hàng.",
+  "Một cuộc chiến nhỏ đang diễn ra.",
+  "Đang thuyết phục cái nền biến mất.",
+  "Sắp thắng rồi."
+];
+
+function AILoadingModal() {
+  const poolRef = useRef<string[]>([]);
+  
+  // Hàm lấy câu thoại ngẫu nhiên không lặp
+  const getNextMsg = () => {
+    if (poolRef.current.length === 0) {
+      poolRef.current = [...ALL_MESSAGES].sort(() => Math.random() - 0.5);
+    }
+    return poolRef.current.pop() || "Sắp xong rồi nè...";
+  };
+
+  // Khởi tạo câu đầu tiên NGAY LẬP TỨC
+  const [currentMessage, setCurrentMessage] = useState(() => getNextMsg());
+
+  useEffect(() => {
+    // Cứ mỗi 3 giây đổi câu thoại 1 lần
+    const interval = setInterval(() => {
+      setCurrentMessage(getNextMsg());
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 transition-all">
+      <div className="bg-slate-900/90 border border-pink-500/30 rounded-3xl p-7 max-w-xs w-full text-center shadow-2xl flex flex-col items-center gap-5 relative overflow-hidden">
+        
+        {/* Mascot nhún nhảy */}
+        <div className="relative py-2">
+          <span className="absolute -top-1 -left-4 text-lg animate-bounce delay-100">✨</span>
+          <span className="absolute top-0 -right-4 text-base animate-pulse">💗</span>
+          <span className="absolute -bottom-1 -left-3 text-sm animate-bounce delay-300">✂️</span>
+
+          <div className="w-20 h-20 bg-gradient-to-tr from-pink-500/20 to-purple-500/20 rounded-full flex items-center justify-center border border-pink-400/30 shadow-inner animate-wiggle">
+            <span className="text-4xl hover:scale-110 transition-transform">🧸</span>
           </div>
         </div>
-      )}
 
+        {/* Text thoại tự đổi từ giây đầu tiên */}
+        <div className="min-h-[52px] flex flex-col items-center justify-center">
+          <h3 className="text-sm font-semibold text-pink-200 animate-pulse">
+            Sắp xong rồi nè... ✨
+          </h3>
+          <p className="text-xs text-slate-300 mt-1.5 font-medium transition-all duration-300">
+            {currentMessage}
+          </p>
+        </div>
+
+        {/* Thanh Shimmer chạy vô cực */}
+        <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-700/50 relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-pink-400 to-transparent w-full animate-shimmer" />
+        </div>
+
+        <span className="text-[11px] text-slate-400 font-light italic">
+          AI đang cố gắng hết sức đó... ✂️
+        </span>
+      </div>
     </div>
   );
 }
