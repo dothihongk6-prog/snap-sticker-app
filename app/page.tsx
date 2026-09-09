@@ -151,13 +151,12 @@ export default function DigitalJournalApp() {
   const streamRef = useRef<MediaStream | null>(null);
   const isRotatingRef = useRef(false);
 
-// Hàm hỗ trợ thu nhỏ ảnh giúp AI tách nền nhanh gấp 4 lần (Miễn phí 100%)
-const resizeImageForAI = (file: File): Promise<Blob> => {
+const resizeImageForAI = (input: string | File): Promise<Blob> => {
   return new Promise((resolve) => {
     const img = new Image();
-    img.src = URL.createObjectURL(file);
+    img.src = typeof input === "string" ? input : URL.createObjectURL(input);
     img.onload = () => {
-      const MAX_SIZE = 1024; // Kích thước tối ưu cho Sticker
+      const MAX_SIZE = 1024;
       let width = img.width;
       let height = img.height;
 
@@ -177,11 +176,7 @@ const resizeImageForAI = (file: File): Promise<Blob> => {
       const ctx = canvas.getContext("2d");
       ctx?.drawImage(img, 0, 0, width, height);
 
-      canvas.toBlob(
-        (blob) => resolve(blob || file),
-        "image/png",
-        0.9
-      );
+      canvas.toBlob((blob) => resolve(blob as Blob), "image/png", 0.9);
     };
   });
 };
@@ -208,18 +203,18 @@ const handleProcessAI = async (file: File) => {
   }
 };
 
-
-  // --- HÀM TÁCH NỀN TỐI ƯU LUỒNG (KHÔNG LÀM NGHẼN THOẠI) ---
-  const processAndSaveStickerAI = async (imageDataUrl: string) => {
-    // 1. Mở Pop-up ngay lập tức
+    const processAndSaveStickerAI = async (imageDataUrl: string) => {
     setIsProcessingAI(true);
 
-    // 2. Hoãn 100ms để trình duyệt kịp vẽ Pop-up + chạy timer thoại trước
+    // Nhường 100ms cho trình duyệt kịp vẽ Pop-up & kích hoạt timer thoại trước
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
-      // 3. Gọi AI tách nền bằng link gốc (không qua resize rườm rà gây chậm)
-      const blob = await removeBackground(imageDataUrl);
+      // Nén ảnh nhẹ lại trước khi tách để AI chạy xé gió 3-5s
+      const optimizedImage = await resizeImageForAI(imageDataUrl);
+      const blob = await removeBackground(optimizedImage, {
+        model: "isnet_quint8",
+      });
       const stickerUrl = URL.createObjectURL(blob);
 
       setMyStickers((prev) => [
@@ -995,7 +990,7 @@ const handleProcessAI = async (file: File) => {
       )}
 
       {/* POP-UP LOADING CUTE VIBE SNAPSTICKER */}
-      {isProcessingAI && <AILoadingModal key={Date.now()} />}
+      {isProcessingAI && <AILoadingModal />}
     </div>
   );
 }
@@ -1076,26 +1071,46 @@ const ALL_MESSAGES = [
 ];
 
 function AILoadingModal() {
-  const poolRef = useRef<string[]>([]);
-  
-  // Hàm lấy câu thoại ngẫu nhiên không lặp
-  const getNextMsg = () => {
-    if (poolRef.current.length === 0) {
-      poolRef.current = [...ALL_MESSAGES].sort(() => Math.random() - 0.5);
-    }
-    return poolRef.current.pop() || "Sắp xong rồi nè...";
-  };
-
-  // Khởi tạo câu đầu tiên NGAY LẬP TỨC
-  const [currentMessage, setCurrentMessage] = useState(() => getNextMsg());
+  const [currentMessage, setCurrentMessage] = useState("");
 
   useEffect(() => {
-    // Cứ mỗi 3 giây đổi câu thoại 1 lần
-    const interval = setInterval(() => {
-      setCurrentMessage(getNextMsg());
-    }, 3000);
+    // 1. Tạo bản sao mới của mảng ALL_MESSAGES mỗi lần Modal được mở ra
+    let messagePool = [...ALL_MESSAGES].sort(() => Math.random() - 0.5);
 
-    return () => clearInterval(interval);
+    const getNextMessage = () => {
+      if (messagePool.length === 0) {
+        messagePool = [...ALL_MESSAGES].sort(() => Math.random() - 0.5);
+      }
+      return messagePool.pop() || "Sắp xong rồi nè...";
+    };
+
+    // Hiện câu đầu tiên ngay lập tức
+    setCurrentMessage(getNextMessage());
+
+    // 2. Dùng Web Worker Blob để đếm đúng 3s/lần, BẤT CHẤP AI CÓ GỒNG CPU HAY KHÔNG
+    const workerCode = `
+      let timer = null;
+      onmessage = function(e) {
+        if (e.data === 'START') {
+          timer = setInterval(() => { postMessage('TICK'); }, 3000);
+        } else if (e.data === 'STOP') {
+          clearInterval(timer);
+        }
+      };
+    `;
+    const blob = new Blob([workerCode], { type: "application/javascript" });
+    const worker = new Worker(URL.createObjectURL(blob));
+
+    worker.onmessage = () => {
+      setCurrentMessage(getNextMessage());
+    };
+
+    worker.postMessage("START");
+
+    return () => {
+      worker.postMessage("STOP");
+      worker.terminate();
+    };
   }, []);
 
   return (
@@ -1113,25 +1128,22 @@ function AILoadingModal() {
           </div>
         </div>
 
-        {/* Text thoại tự đổi từ giây đầu tiên */}
-        <div className="min-h-[52px] flex flex-col items-center justify-center">
+        {/* Text thoại nhảy chuẩn 3s/lần bất chấp lag */}
+        <div className="min-h-[52px] flex flex-col items-center justify-center gap-1">
           <h3 className="text-sm font-semibold text-pink-200 animate-pulse">
             Sắp xong rồi nè... ✨
           </h3>
-          <p className="text-xs text-slate-300 mt-1.5 font-medium transition-all duration-300">
+          <p className="text-xs text-slate-300 font-medium transition-all duration-300">
             {currentMessage}
           </p>
         </div>
 
-        {/* Thanh Shimmer chạy vô cực */}
+        {/* Thanh Shimmer running */}
         <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-700/50 relative">
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-pink-400 to-transparent w-full animate-shimmer" />
         </div>
-
-        <span className="text-[11px] text-slate-400 font-light italic">
-          AI đang cố gắng hết sức đó... ✂️
-        </span>
       </div>
     </div>
   );
 }
+
