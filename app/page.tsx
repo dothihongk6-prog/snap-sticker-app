@@ -36,9 +36,9 @@ interface TextNote {
   fontSize: number;
   color: string;
   fontFamily: string;
+  align?: "left" | "center" | "right";
+  rotation?: number;
 }
-
-
 
 const PRESET_STICKERS = [
   { id: "d1", name: "Viền nét đứt", url: "https://api.iconify.design/lucide:dashed-circle.svg?color=white" },
@@ -54,12 +54,13 @@ export default function DigitalJournalApp() {
   const [borderWidth, setBorderWidth] = useState(3);
 
   const [fontSize, setFontSize] = useState(24);
-  const [brushSize, setBrushSize] = useState(4); // Cỡ nét bút vẽ
+  const [brushSize, setBrushSize] = useState(4);
   const [brushOpacity, setBrushOpacity] = useState(1);
 
   const [myStickers, setMyStickers] = useState<SavedSticker[]>([]);
   const [placedStickers, setPlacedStickers] = useState<PlacedSticker[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
   const [paperBackground, setPaperBackground] = useState<"lined" | "grid" | "kraft" | "white" | "custom">("lined");
   const [customPaperUrl, setCustomPaperUrl] = useState<string | null>(null);
@@ -70,7 +71,6 @@ export default function DigitalJournalApp() {
   const [textNotes, setTextNotes] = useState<TextNote[]>([]);
 
   const [activeTool, setActiveTool] = useState<"select" | "text" | "pen" | "eraser" | "shape">("select");
-  const [drawOnTop, setDrawOnTop] = useState<boolean>(true);
   const [selectedShape, setSelectedShape] = useState<"line" | "arrow" | "rect" | "circle">("rect");
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
@@ -80,31 +80,30 @@ export default function DigitalJournalApp() {
     import("@imgly/background-removal");
   }, []);
 
- // Khi đổi màu
-const handleColorChange = (newColor: string) => {
-  setActiveColor(newColor);
-  if (selectedStickerId) {
-    setPlacedStickers((prev) =>
-      prev.map((s) => (s.id === selectedStickerId ? { ...s, borderColor: newColor } : s))
-    );
-  }
-};
+  const handleColorChange = (newColor: string) => {
+    setActiveColor(newColor);
+    if (selectedStickerId) {
+      setPlacedStickers((prev) =>
+        prev.map((s) => (s.id === selectedStickerId ? { ...s, borderColor: newColor } : s))
+      );
+    }
+  };
 
-// Khi kéo thanh chỉnh độ dày viền
-const handleBorderWidthChange = (width: number) => {
-  setBorderWidth(width);
-  if (selectedStickerId) {
-    setPlacedStickers((prev) =>
-      prev.map((s) => (s.id === selectedStickerId ? { ...s, borderWidth: width } : s))
-    );
-  }
-};
+  const handleBorderWidthChange = (width: number) => {
+    setBorderWidth(width);
+    if (selectedStickerId) {
+      setPlacedStickers((prev) =>
+        prev.map((s) => (s.id === selectedStickerId ? { ...s, borderWidth: width } : s))
+      );
+    }
+  };
 
   const handleJournalClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).closest('.react-draggable')) {
       return;
     }
     setSelectedStickerId(null);
+    setSelectedTextId(null);
     if (activeTool !== "text") return;
 
     const rect = e.currentTarget.getBoundingClientRect();
@@ -119,8 +118,11 @@ const handleBorderWidthChange = (width: number) => {
       fontSize: fontSize,
       color: activeColor === "#ffffff" ? "#1e293b" : activeColor,
       fontFamily: journalFont,
+      align: "left",
+      rotation: 0,
     };
     setTextNotes((prev) => [...prev, newNote]);
+    setSelectedTextId(newNote.id);
   };
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -132,7 +134,7 @@ const handleBorderWidthChange = (width: number) => {
       if (!document.getElementById("google-translate-script")) {
         const script = document.createElement("script");
         script.id = "google-translate-script";
-        script.src = "//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+        script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
         document.body.appendChild(script);
         (window as any).googleTranslateElementInit = () => {
           new (window as any).google.translate.TranslateElement(
@@ -252,12 +254,17 @@ const handleBorderWidthChange = (width: number) => {
     setSelectedStickerId(newSticker.id);
   };
 
+  const removeStickerFromLibrary = (stickerId: string) => {
+    setMyStickers((prev) => prev.filter((sticker) => sticker.id !== stickerId));
+  };
+
   const handleRotateStart = (
     e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>,
-    stickerId: string
+    itemId: string,
+    itemType: "sticker" | "text"
   ) => {
     e.stopPropagation();
-    const element = document.getElementById(`sticker-${stickerId}`);
+    const element = document.getElementById(`${itemType}-${itemId}`);
     if (!element) return;
 
     const rect = element.getBoundingClientRect();
@@ -277,9 +284,15 @@ const handleBorderWidthChange = (width: number) => {
       let degrees = radians * (180 / Math.PI) + 90;
       if (degrees < 0) degrees += 360;
 
-      setPlacedStickers((prev) =>
-        prev.map((s) => (s.id === stickerId ? { ...s, rotation: Math.round(degrees) } : s))
-      );
+      if (itemType === "sticker") {
+        setPlacedStickers((prev) =>
+          prev.map((s) => (s.id === itemId ? { ...s, rotation: Math.round(degrees) } : s))
+        );
+      } else {
+        setTextNotes((prev) =>
+          prev.map((n) => (n.id === itemId ? { ...n, rotation: Math.round(degrees) } : n))
+        );
+      }
     };
 
     const handleEnd = () => {
@@ -439,41 +452,58 @@ const handleBorderWidthChange = (width: number) => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-3 sm:p-6 font-sans">
       <style>{`
-  .bg-lined { background-color: #fdfbf7; background-image: repeating-linear-gradient(transparent, transparent 27px, #e2e8f0 28px); }
-  .bg-grid { background-color: #fdfbf7; background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size: 24px 24px; }
-  .bg-kraft { background-color: #f5efe6; }
-  .bg-white-paper { background-color: #ffffff; }
-  
-  /* Hiện rõ khung chọn ngôn ngữ Google Translate */
-  #google_translate_element select {
-    background-color: #1e293b !important;
-    color: #f472b6 !important;
-    border: 1px solid #475569 !important;
-    border-radius: 8px !important;
-    padding: 4px 8px !important;
-    font-size: 12px !important;
-    outline: none !important;
-    cursor: pointer !important;
-  }
-  .goog-te-gadget { color: transparent !important; font-size: 0 !important; }
-  .goog-te-gadget span { display: none !important; }
-`}</style>
-
+        .bg-lined { background-color: #fdfbf7; background-image: repeating-linear-gradient(transparent, transparent 27px, #e2e8f0 28px); }
+        .bg-grid { background-color: #fdfbf7; background-image: linear-gradient(#e2e8f0 1px, transparent 1px), linear-gradient(90deg, #e2e8f0 1px, transparent 1px); background-size: 24px 24px; }
+        .bg-kraft { background-color: #f5efe6; }
+        .bg-white-paper { background-color: #ffffff; }
+        
+        #google_translate_element {
+          display: flex;
+          align-items: center;
+        }
+        #google_translate_element select {
+          background-color: #1e293b !important;
+          color: #f472b6 !important;
+          border: 1px solid #475569 !important;
+          border-radius: 8px !important;
+          padding: 4px 8px !important;
+          font-size: 12px !important;
+          outline: none !important;
+          cursor: pointer !important;
+          min-width: 160px !important;
+        }
+        #google_translate_element .goog-te-gadget {
+          color: transparent !important;
+          font-size: 0 !important;
+        }
+        #google_translate_element .goog-te-gadget .goog-te-combo {
+          color: #f472b6 !important;
+          font-size: 12px !important;
+          display: block !important;
+        }
+        #google_translate_element .goog-te-gadget span,
+        #google_translate_element .goog-te-gadget img,
+        #google_translate_element .goog-te-branding,
+        #google_translate_element .goog-logo-link,
+        #google_translate_element .goog-te-branding-link {
+          display: none !important;
+        }
+      `}</style>
 
       {/* HEADER */}
       <header className="w-full max-w-6xl flex flex-wrap items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl mb-4 gap-3">
         <h1 className="text-xl font-bold text-pink-500 flex items-center gap-2">📖 Nhật Ký Sticker & Note Số</h1>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700">
+        <div className="flex items-center gap-3 ml-auto">
+          <div className="flex items-center gap-1.5 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700 min-w-[170px] justify-center">
             <Globe className="w-4 h-4 text-pink-400 shrink-0" />
-            <div id="google_translate_element"></div>
+            <div id="google_translate_element" className="w-full"></div>
           </div>
           <button onClick={exportPNG} className="px-3.5 py-2 bg-pink-600 hover:bg-pink-500 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5"><Download className="w-4 h-4" /> Lưu Ảnh</button>
           <button onClick={exportPDF} className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center gap-1.5"><Printer className="w-4 h-4" /> In A4</button>
         </div>
       </header>
 
-      {/* TOOLBAR NÂNG CẤP */}
+      {/* TOOLBAR */}
       <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
         
         {/* CÔNG CỤ HOẠT ĐỘNG */}
@@ -484,9 +514,51 @@ const handleBorderWidthChange = (width: number) => {
           <button onClick={() => setActiveTool("eraser")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "eraser" ? "bg-pink-600 text-white" : "text-slate-300"}`}>Tẩy</button>
         </div>
 
+        {/* NÚT CĂN LỀ VĂN BẢN */}
+        <div className="flex gap-1 border-l border-slate-700 pl-2">
+          <button
+            onClick={() => {
+              if (selectedTextId) {
+                setTextNotes((prev) =>
+                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "left" } : n))
+                );
+              }
+            }}
+            className="p-1 hover:bg-slate-700 rounded text-xs"
+            title="Căn trái"
+          >
+            📄 Trái
+          </button>
+          <button
+            onClick={() => {
+              if (selectedTextId) {
+                setTextNotes((prev) =>
+                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "center" } : n))
+                );
+              }
+            }}
+            className="p-1 hover:bg-slate-700 rounded text-xs"
+            title="Căn giữa"
+          >
+            📄 Giữa
+          </button>
+          <button
+            onClick={() => {
+              if (selectedTextId) {
+                setTextNotes((prev) =>
+                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "right" } : n))
+                );
+              }
+            }}
+            className="p-1 hover:bg-slate-700 rounded text-xs"
+            title="Căn phải"
+          >
+            📄 Phải
+          </button>
+        </div>
+
         {/* THÔNG SỐ VĂN BẢN VÀ BÚT VẼ */}
         <div className="flex flex-wrap items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
-          {/* Cỡ chữ */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-slate-400">🔤 Cỡ chữ:</span>
             <input 
@@ -498,7 +570,6 @@ const handleBorderWidthChange = (width: number) => {
             />
           </div>
 
-          {/* Cỡ nét bút vẽ */}
           <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
             <span className="text-[11px] text-slate-400">✏️ Nét bút:</span>
             <input 
@@ -510,7 +581,6 @@ const handleBorderWidthChange = (width: number) => {
             <span className="text-[10px] text-pink-400 font-mono w-4">{brushSize}</span>
           </div>
 
-          {/* Độ mờ nét vẽ (Opacity) */}
           <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
             <span className="text-[11px] text-slate-400">💧 Độ rõ:</span>
             <input 
@@ -565,7 +635,6 @@ const handleBorderWidthChange = (width: number) => {
             </label>
           </div>
 
-          {/* BẢNG MÀU CHUNG & CHỈNH VIỀN STICKER ĐANG CHỌN */}
           <div className="bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-3 mb-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-pink-300">🎨 Chọn Màu Sắc</span>
@@ -581,7 +650,6 @@ const handleBorderWidthChange = (width: number) => {
             </div>
           </div>
 
-          {/* STICKER MẪU */}
           <div className="pt-2 border-t border-slate-800">
             <p className="text-xs font-semibold text-slate-400 mb-2">✨ Sticker Mẫu Có Sẵn:</p>
             <div className="grid grid-cols-3 gap-2 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60 mb-3">
@@ -593,7 +661,6 @@ const handleBorderWidthChange = (width: number) => {
             </div>
           </div>
 
-          {/* KHO STICKER CỦA BẠN */}
           <div className="pt-1">
             <p className="text-xs text-slate-400 mb-2">Chạm sticker để dán vào trang sổ:</p>
             <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 min-h-[160px] max-h-[220px] overflow-y-auto grid grid-cols-3 gap-2">
@@ -601,15 +668,27 @@ const handleBorderWidthChange = (width: number) => {
                 <div className="col-span-3 text-center py-8 text-xs text-slate-500">Chưa có sticker. Chụp hoặc tải ảnh lên nhé!</div>
               ) : (
                 myStickers.map((st) => (
-                  <button key={st.id} onClick={() => placeStickerToJournal(st.url)} className="aspect-square bg-slate-900 rounded-lg p-1 border border-slate-800 flex items-center justify-center">
-                    <img src={st.url} alt="Sticker" className="w-full h-full object-contain" />
-                  </button>
+                  <div key={st.id} className="relative group aspect-square">
+                    <button onClick={() => placeStickerToJournal(st.url)} className="w-full h-full bg-slate-900 rounded-lg p-1 border border-slate-800 flex items-center justify-center overflow-hidden">
+                      <img src={st.url} alt="Sticker" className="w-full h-full object-contain" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeStickerFromLibrary(st.id);
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Xóa sticker này"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 ))
               )}
             </div>
           </div>
 
-          {/* MẪU SỔ */}
           <div className="pt-2 border-t border-slate-800 space-y-2">
             <p className="text-xs font-semibold text-slate-400">Mẫu Trang Sổ:</p>
             <div className="grid grid-cols-2 gap-1.5">
@@ -655,160 +734,177 @@ const handleBorderWidthChange = (width: number) => {
               </div>
             </div>
 
-            {/* DANH SÁCH KHỐI CHỮ (KÉO RỘNG RÃI CHUẨN WORD) */}
-            {textNotes.map((note) => (
-              <Rnd
-                key={note.id}
-                default={{ x: note.x, y: note.y, width: Math.max(200, note.fontSize * note.text.length * 0.8), height: note.fontSize * 1.8 + 10 }}
-                bounds="parent"
-                enableResizing={true}
-                className="group z-20"
-              >
-                <div className="relative w-full h-full flex items-center">
-                  <textarea
-                    autoFocus
-                    placeholder="Nhập chữ..."
-                    value={note.text}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setTextNotes(prev => prev.map(n => n.id === note.id ? { ...n, text: val } : n));
-                    }}
-                    style={{
-                      fontSize: `${note.fontSize}px`,
-                      color: note.color,
-                      fontFamily: note.fontFamily,
-                      lineHeight: "1.2"
-                    }}
-                    className="w-full h-full bg-transparent border border-dashed border-transparent hover:border-pink-400 focus:border-pink-500 focus:bg-white/40 rounded px-1.5 py-0.5 focus:outline-none resize-none font-semibold whitespace-nowrap overflow-hidden"
-                  />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTextNotes(prev => prev.filter(n => n.id !== note.id));
-                    }}
-                    className="opacity-0 group-hover:opacity-100 absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-xs flex items-center justify-center shadow z-30"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </Rnd>
-            ))}
+            {/* DANH SÁCH KHỐI CHỮ */}
+            {textNotes.map((note) => {
+              const isTextSelected = selectedTextId === note.id;
+
+              return (
+                <Rnd
+                  key={note.id}
+                  default={{
+                    x: note.x,
+                    y: note.y,
+                    width: 250,
+                    height: 120,
+                  }}
+                  bounds="parent"
+                  enableResizing={true}
+                  className={`group z-30 ${
+                    activeTool !== "select" ? "pointer-events-none" : "pointer-events-auto"
+                  }`}
+                  style={{
+                    border: isTextSelected ? "2px dashed rgba(244, 114, 182, 0.95)" : "1px solid transparent",
+                    borderRadius: isTextSelected ? "10px" : undefined,
+                    background: isTextSelected ? "rgba(244, 114, 182, 0.08)" : undefined,
+                    transform: `rotate(${note.rotation || 0}deg)`,
+                  }}
+                  onClick={() => setSelectedTextId(note.id)}
+                >
+                  <div className="relative w-full h-full" id={`text-${note.id}`}>
+                    <textarea
+                      autoFocus
+                      placeholder="Nhập chữ..."
+                      value={note.text}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTextNotes((prev) =>
+                          prev.map((n) => (n.id === note.id ? { ...n, text: val } : n))
+                        );
+                      }}
+                      style={{
+                        fontSize: `${note.fontSize}px`,
+                        color: note.color,
+                        fontFamily: note.fontFamily,
+                        lineHeight: "1.4",
+                        textAlign: note.align || "left",
+                      }}
+                      className="w-full h-full bg-transparent border-none outline-none resize-none font-semibold break-words overflow-hidden p-1"
+                    />
+
+                    {isTextSelected && activeTool === "select" && (
+                      <>
+                        <button
+                          onMouseDown={(e) => handleRotateStart(e, note.id, "text")}
+                          onTouchStart={(e) => handleRotateStart(e, note.id, "text")}
+                          className="absolute -top-6 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing"
+                        >
+                          🔄
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTextNotes((prev) => prev.filter((n) => n.id !== note.id));
+                            setSelectedTextId((prev) => (prev === note.id ? null : prev));
+                          }}
+                          className="absolute -bottom-3 -right-3 bg-red-500 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center shadow z-50 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </Rnd>
+              );
+            })}
 
             {/* CANVAS VẼ */}
             <canvas
-  ref={canvasRef}
-  width={800}
-  height={620}
-  onMouseDown={startDrawing}
-  onMouseUp={stopDrawing}
-  onMouseMove={draw}
-  onTouchStart={startDrawing}
-  onTouchEnd={stopDrawing}
-  onTouchMove={draw}
-  className={`absolute inset-0 z-20 ${
-    activeTool !== "select"
-      ? "cursor-crosshair pointer-events-auto"
-      : "pointer-events-none"
-  }`}
-/>
+              ref={canvasRef}
+              width={800}
+              height={620}
+              onMouseDown={startDrawing}
+              onMouseUp={stopDrawing}
+              onMouseMove={draw}
+              onTouchStart={startDrawing}
+              onTouchEnd={stopDrawing}
+              onTouchMove={draw}
+              className={`absolute inset-0 z-20 ${
+                activeTool !== "select"
+                  ? "cursor-crosshair pointer-events-auto"
+                  : "pointer-events-none"
+              }`}
+            />
 
             {/* STICKER DÁN TRÊN SỔ */}
             {placedStickers.map((st) => {
-  const isSelected = selectedStickerId === st.id;
-  return (
-    <Rnd
-      key={st.id}
-      size={{ width: st.width, height: st.height }}
-      position={{ x: st.x, y: st.y }}
-      onDragStop={(e, d) => {
-        setPlacedStickers((prev) =>
-          prev.map((s) => (s.id === st.id ? { ...s, x: d.x, y: d.y } : s))
-        );
-      }}
-      onResizeStop={(e, direction, ref, delta, position) => {
-        setPlacedStickers((prev) =>
-          prev.map((s) =>
-            s.id === st.id
-              ? {
-                  ...s,
-                  width: parseInt(ref.style.width),
-                  height: parseInt(ref.style.height),
-                  ...position,
-                }
-              : s
-          )
-        );
-      }}
-      bounds="parent"
-      className={`group ${
-        activeTool !== "select" ? "pointer-events-none" : "pointer-events-auto"
-      }`}
-      style={{
-        transform: `rotate(${st.rotation || 0}deg)`,
-      }}
-      onClick={() => setSelectedStickerId(st.id)}
-    >
-      <div className="relative w-full h-full">
-      <img
-  src={st.url}
-  alt="sticker"
-  style={{
-    // Đổ viền chuẩn theo màu (borderColor) và độ dày (borderWidth) của từng sticker
-    filter: (st.borderWidth ?? borderWidth) > 0 
-      ? `drop-shadow(${(st.borderWidth ?? borderWidth)}px 0 0 ${st.borderColor || activeColor}) ` +
-        `drop-shadow(-${(st.borderWidth ?? borderWidth)}px 0 0 ${st.borderColor || activeColor}) ` +
-        `drop-shadow(0 ${(st.borderWidth ?? borderWidth)}px 0 ${st.borderColor || activeColor}) ` +
-        `drop-shadow(0 -${(st.borderWidth ?? borderWidth)}px 0 ${st.borderColor || activeColor})`
-      : "none"
-  }}
-  className={`w-full h-full object-contain pointer-events-none select-none ${
-    isSelected ? "ring-2 ring-pink-500 rounded-lg" : ""
-  }`}
-/>
+              const isSelected = selectedStickerId === st.id;
+              return (
+                <Rnd
+                  key={st.id}
+                  size={{ width: st.width, height: st.height }}
+                  position={{ x: st.x, y: st.y }}
+                  onDragStop={(e, d) => {
+                    setPlacedStickers((prev) =>
+                      prev.map((s) => (s.id === st.id ? { ...s, x: d.x, y: d.y } : s))
+                    );
+                  }}
+                  onResizeStop={(e, direction, ref, delta, position) => {
+                    setPlacedStickers((prev) =>
+                      prev.map((s) =>
+                        s.id === st.id
+                          ? {
+                              ...s,
+                              width: parseInt(ref.style.width),
+                              height: parseInt(ref.style.height),
+                              ...position,
+                            }
+                          : s
+                      )
+                    );
+                  }}
+                  bounds="parent"
+                  className={`group ${
+                    activeTool !== "select" ? "pointer-events-none" : "pointer-events-auto"
+                  }`}
+                  style={{
+                    transform: `rotate(${st.rotation || 0}deg)`,
+                    border: isSelected ? "2px dashed rgba(244, 114, 182, 0.95)" : "1px solid transparent",
+                    borderRadius: isSelected ? "10px" : undefined,
+                    background: isSelected ? "rgba(244, 114, 182, 0.08)" : undefined,
+                  }}
+                  onClick={() => setSelectedStickerId(st.id)}
+                >
+                  <div className="relative w-full h-full" id={`sticker-${st.id}`}>
+                    <img
+                      src={st.url}
+                      alt="sticker"
+                      style={{
+                        filter: (st.borderWidth ?? borderWidth) > 0 
+                          ? `drop-shadow(${(st.borderWidth ?? borderWidth)}px 0 0 ${st.borderColor || activeColor}) ` +
+                            `drop-shadow(-${(st.borderWidth ?? borderWidth)}px 0 0 ${st.borderColor || activeColor}) ` +
+                            `drop-shadow(0 ${(st.borderWidth ?? borderWidth)}px 0 ${st.borderColor || activeColor}) ` +
+                            `drop-shadow(0 -${(st.borderWidth ?? borderWidth)}px 0 ${st.borderColor || activeColor})`
+                          : "none"
+                      }}
+                      className="w-full h-full object-contain pointer-events-none select-none"
+                    />
 
-        {/* CÁC NÚT ĐIỀU KHIỂN KHI CHỌN STICKER */}
-        {isSelected && activeTool === "select" && (
-          <>
-            {/* Nút xoay */}
-            <button
-              onMouseDown={(e) => handleRotateStart(e, st.id)}
-              onTouchStart={(e) => handleRotateStart(e, st.id)}
-              className="absolute -top-6 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing"
-            >
-              🔄
-            </button>
+                    {isSelected && activeTool === "select" && (
+                      <>
+                        <button
+                          onMouseDown={(e) => handleRotateStart(e, st.id, "sticker")}
+                          onTouchStart={(e) => handleRotateStart(e, st.id, "sticker")}
+                          className="absolute -top-6 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing"
+                        >
+                          🔄
+                        </button>
 
-            {/* Nút đẩy Sticker lên trên cùng */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setPlacedStickers((prev) => [
-                  ...prev.filter((s) => s.id !== st.id),
-                  st,
-                ]);
-              }}
-              title="Đưa lên trên cùng"
-              className="absolute -top-6 right-0 bg-slate-800 text-pink-400 w-6 h-6 rounded-full shadow text-[10px] font-bold flex items-center justify-center border border-slate-600 z-50 hover:bg-slate-700"
-            >
-              ▲
-            </button>
-
-            {/* Nút xóa */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setPlacedStickers((prev) => prev.filter((s) => s.id !== st.id));
-              }}
-              className="absolute -bottom-3 -right-3 bg-red-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50"
-            >
-              ✕
-            </button>
-          </>
-        )}
-      </div>
-    </Rnd>
-  );
-})}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlacedStickers((prev) => prev.filter((s) => s.id !== st.id));
+                          }}
+                          className="absolute -bottom-3 -right-3 bg-red-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </Rnd>
+              );
+            })}
           </div>
         </div>
       </div>
