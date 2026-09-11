@@ -40,15 +40,6 @@ interface TextNote {
   rotation?: number;
 }
 
-const PRESET_STICKERS = [
-  { id: "d1", name: "Viền nét đứt", url: "https://api.iconify.design/lucide:dashed-circle.svg?color=white" },
-  { id: "d2", name: "Mặt cười cute", url: "https://api.iconify.design/fluent-emoji-flat:grinning-cat-with-smiling-eyes.svg" },
-  { id: "d3", name: "Khung thoại", url: "https://api.iconify.design/ph:chat-teardrop-text-bold.svg?color=white" },
-  { id: "d4", name: "Mũi tên chỉ", url: "https://api.iconify.design/ph:arrow-arc-left-bold.svg?color=white" },
-  { id: "d5", name: "Lia sáng", url: "https://api.iconify.design/ph:sparkle-fill.svg?color=yellow" },
-  { id: "d6", name: "Trái tim", url: "https://api.iconify.design/ph:heart-dashed-bold.svg?color=pink" },
-];
-
 export default function DigitalJournalApp() {
   const [activeColor, setActiveColor] = useState('#ffffff');
   const [borderWidth, setBorderWidth] = useState(3);
@@ -72,6 +63,7 @@ export default function DigitalJournalApp() {
 
   const [activeTool, setActiveTool] = useState<"select" | "text" | "pen" | "eraser" | "shape">("select");
   const [selectedShape, setSelectedShape] = useState<"line" | "arrow" | "rect" | "circle">("rect");
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
@@ -258,12 +250,44 @@ export default function DigitalJournalApp() {
     setMyStickers((prev) => prev.filter((sticker) => sticker.id !== stickerId));
   };
 
+  const selectedRotation =
+    selectedStickerId !== null
+      ? placedStickers.find((sticker) => sticker.id === selectedStickerId)?.rotation ?? 0
+      : selectedTextId !== null
+      ? textNotes.find((note) => note.id === selectedTextId)?.rotation ?? 0
+      : 0;
+
+  const updateSelectedItemRotation = (nextRotation: number) => {
+    if (selectedStickerId) {
+      setPlacedStickers((prev) =>
+        prev.map((sticker) =>
+          sticker.id === selectedStickerId ? { ...sticker, rotation: nextRotation } : sticker
+        )
+      );
+      return;
+    }
+
+    if (selectedTextId) {
+      setTextNotes((prev) =>
+        prev.map((note) =>
+          note.id === selectedTextId ? { ...note, rotation: nextRotation } : note
+        )
+      );
+    }
+  };
+
+  const rotateSelectedItem = (delta: number) => {
+    updateSelectedItemRotation((selectedRotation + delta + 360) % 360);
+  };
+
   const handleRotateStart = (
-    e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>,
+    e: React.PointerEvent<HTMLButtonElement>,
     itemId: string,
     itemType: "sticker" | "text"
   ) => {
+    e.preventDefault();
     e.stopPropagation();
+
     const element = document.getElementById(`${itemType}-${itemId}`);
     if (!element) return;
 
@@ -271,15 +295,20 @@ export default function DigitalJournalApp() {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
+    const handleMove = (moveEvent: PointerEvent | MouseEvent | TouchEvent) => {
       let clientX = 0, clientY = 0;
-      if ("touches" in moveEvent && moveEvent.touches.length > 0) {
+
+      if ("pointerType" in moveEvent && moveEvent.pointerType) {
+        clientX = moveEvent.clientX;
+        clientY = moveEvent.clientY;
+      } else if ("touches" in moveEvent && moveEvent.touches.length > 0) {
         clientX = moveEvent.touches[0].clientX;
         clientY = moveEvent.touches[0].clientY;
       } else if ("clientX" in moveEvent) {
-        clientX = (moveEvent as MouseEvent).clientX;
-        clientY = (moveEvent as MouseEvent).clientY;
+        clientX = moveEvent.clientX;
+        clientY = moveEvent.clientY;
       }
+
       const radians = Math.atan2(clientY - centerY, clientX - centerX);
       let degrees = radians * (180 / Math.PI) + 90;
       if (degrees < 0) degrees += 360;
@@ -296,12 +325,16 @@ export default function DigitalJournalApp() {
     };
 
     const handleEnd = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleEnd);
       window.removeEventListener("touchmove", handleMove);
       window.removeEventListener("touchend", handleEnd);
     };
 
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd);
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleEnd);
     window.addEventListener("touchmove", handleMove);
@@ -505,120 +538,157 @@ export default function DigitalJournalApp() {
 
       {/* TOOLBAR */}
       <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-        
-        {/* CÔNG CỤ HOẠT ĐỘNG */}
         <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
           <button onClick={() => setActiveTool("select")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "select" ? "bg-pink-600 text-white" : "text-slate-300"}`}>Con Trỏ</button>
           <button onClick={() => setActiveTool("text")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "text" ? "bg-pink-600 text-white" : "text-slate-300"}`}>✍️ Văn Bản</button>
           <button onClick={() => setActiveTool("pen")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "pen" ? "bg-pink-600 text-white" : "text-slate-300"}`}><PenTool className="w-3.5 h-3.5" /> Bút Vẽ</button>
           <button onClick={() => setActiveTool("eraser")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "eraser" ? "bg-pink-600 text-white" : "text-slate-300"}`}>Tẩy</button>
-        </div>
-
-        {/* NÚT CĂN LỀ VĂN BẢN */}
-        <div className="flex gap-1 border-l border-slate-700 pl-2">
           <button
-            onClick={() => {
-              if (selectedTextId) {
-                setTextNotes((prev) =>
-                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "left" } : n))
-                );
-              }
-            }}
-            className="p-1 hover:bg-slate-700 rounded text-xs"
-            title="Căn trái"
+            onClick={() => setShowAdvancedControls((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${showAdvancedControls ? "bg-pink-600 text-white" : "text-slate-300"}`}
           >
-            📄 Trái
-          </button>
-          <button
-            onClick={() => {
-              if (selectedTextId) {
-                setTextNotes((prev) =>
-                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "center" } : n))
-                );
-              }
-            }}
-            className="p-1 hover:bg-slate-700 rounded text-xs"
-            title="Căn giữa"
-          >
-            📄 Giữa
-          </button>
-          <button
-            onClick={() => {
-              if (selectedTextId) {
-                setTextNotes((prev) =>
-                  prev.map((n) => (n.id === selectedTextId ? { ...n, align: "right" } : n))
-                );
-              }
-            }}
-            className="p-1 hover:bg-slate-700 rounded text-xs"
-            title="Căn phải"
-          >
-            📄 Phải
+            {showAdvancedControls ? "Thu gọn" : "Tùy chọn"}
           </button>
         </div>
 
-        {/* THÔNG SỐ VĂN BẢN VÀ BÚT VẼ */}
-        <div className="flex flex-wrap items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-400">🔤 Cỡ chữ:</span>
-            <input 
-              type="number" 
-              value={fontSize} 
-              onChange={(e) => setFontSize(Number(e.target.value))}
-              className="w-12 bg-slate-900 text-pink-400 text-xs text-center rounded border border-slate-700 p-0.5"
-              min="10" max="120"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
-            <span className="text-[11px] text-slate-400">✏️ Nét bút:</span>
-            <input 
-              type="range" min="1" max="30" 
-              value={brushSize} 
-              onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
-            />
-            <span className="text-[10px] text-pink-400 font-mono w-4">{brushSize}</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
-            <span className="text-[11px] text-slate-400">💧 Độ rõ:</span>
-            <input 
-              type="range" min="0.1" max="1" step="0.1"
-              value={brushOpacity} 
-              onChange={(e) => setBrushOpacity(Number(e.target.value))}
-              className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
-            />
-          </div>
-        </div>
-
-        {/* SHAPES */}
-        <div className="flex items-center gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-          <button onClick={() => { setActiveTool("shape"); setSelectedShape("rect"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "rect" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Square className="w-4 h-4" /></button>
-          <button onClick={() => { setActiveTool("shape"); setSelectedShape("circle"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "circle" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Circle className="w-4 h-4" /></button>
-          <button onClick={() => { setActiveTool("shape"); setSelectedShape("line"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "line" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Minus className="w-4 h-4" /></button>
-          <button onClick={() => { setActiveTool("shape"); setSelectedShape("arrow"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "arrow" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><ArrowRight className="w-4 h-4" /></button>
-        </div>
-
-        {/* FONT CHỮ */}
-        <div className="flex items-center gap-2">
-          <select 
-            value={journalFont} 
-            onChange={(e) => setJournalFont(e.target.value)}
-            className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none cursor-pointer"
-          >
-            <option value="font-sans">Modern Sans (Hiện đại)</option>
-            <option value="font-serif">Classic Serif (Trang trọng)</option>
-            <option value="font-mono">Typewriter (Máy gõ)</option>
-            <option value="'MS Mincho', serif">游明朝 / Mincho (Nhật Cổ Điển)</option>
-            <option value="'MS Gothic', sans-serif">游ゴシック / Gothic (Nhật Đậm)</option>
-            <option value="'HGGothicE', sans-serif">HGP教科書体 (Giáo Khoa Thư)</option>
-            <option value="'Brush Script MT', cursive">Artistic Script (Nghệ Thuật)</option>
-          </select>
-
-          <button onClick={undoDraw} className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg flex items-center gap-1 font-semibold"><Undo2 className="w-3.5 h-3.5" /> Hoàn tác</button>
-        </div>
+        <button onClick={undoDraw} className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg flex items-center gap-1 font-semibold"><Undo2 className="w-3.5 h-3.5" /> Hoàn tác</button>
       </div>
+
+      {showAdvancedControls && (
+        <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center gap-3 text-xs">
+          <div className="flex gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
+            <button
+              onClick={() => {
+                if (selectedTextId) {
+                  setTextNotes((prev) =>
+                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "left" } : n))
+                  );
+                }
+              }}
+              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
+              title="Căn trái"
+            >
+              📄 Trái
+            </button>
+            <button
+              onClick={() => {
+                if (selectedTextId) {
+                  setTextNotes((prev) =>
+                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "center" } : n))
+                  );
+                }
+              }}
+              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
+              title="Căn giữa"
+            >
+              📄 Giữa
+            </button>
+            <button
+              onClick={() => {
+                if (selectedTextId) {
+                  setTextNotes((prev) =>
+                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "right" } : n))
+                  );
+                }
+              }}
+              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
+              title="Căn phải"
+            >
+              📄 Phải
+            </button>
+          </div>
+
+          {(selectedStickerId || selectedTextId) && (
+            <div className="flex flex-wrap items-center gap-2 bg-slate-950/80 px-2 py-1.5 rounded-xl border border-slate-800">
+              <span className="text-[11px] text-slate-400">🔄 Xoay:</span>
+              <button
+                onClick={() => rotateSelectedItem(-90)}
+                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
+              >
+                ↺ 90°
+              </button>
+              <button
+                onClick={() => rotateSelectedItem(90)}
+                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
+              >
+                ↻ 90°
+              </button>
+              <button
+                onClick={() => rotateSelectedItem(180)}
+                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
+              >
+                180°
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                value={selectedRotation}
+                onChange={(e) => updateSelectedItemRotation(Number(e.target.value))}
+                className="w-20 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+              <span className="text-[10px] text-pink-400 font-mono w-8">{selectedRotation}°</span>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">🔤 Cỡ chữ:</span>
+              <input 
+                type="number" 
+                value={fontSize} 
+                onChange={(e) => setFontSize(Number(e.target.value))}
+                className="w-12 bg-slate-900 text-pink-400 text-xs text-center rounded border border-slate-700 p-0.5"
+                min="10" max="120"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+              <span className="text-[11px] text-slate-400">✏️ Nét bút:</span>
+              <input 
+                type="range" min="1" max="30" 
+                value={brushSize} 
+                onChange={(e) => setBrushSize(Number(e.target.value))}
+                className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+              <span className="text-[10px] text-pink-400 font-mono w-4">{brushSize}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
+              <span className="text-[11px] text-slate-400">💧 Độ rõ:</span>
+              <input 
+                type="range" min="0.1" max="1" step="0.1"
+                value={brushOpacity} 
+                onChange={(e) => setBrushOpacity(Number(e.target.value))}
+                className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
+            <button onClick={() => { setActiveTool("shape"); setSelectedShape("rect"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "rect" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Square className="w-4 h-4" /></button>
+            <button onClick={() => { setActiveTool("shape"); setSelectedShape("circle"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "circle" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Circle className="w-4 h-4" /></button>
+            <button onClick={() => { setActiveTool("shape"); setSelectedShape("line"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "line" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Minus className="w-4 h-4" /></button>
+            <button onClick={() => { setActiveTool("shape"); setSelectedShape("arrow"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "arrow" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><ArrowRight className="w-4 h-4" /></button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select 
+              value={journalFont} 
+              onChange={(e) => setJournalFont(e.target.value)}
+              className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none cursor-pointer"
+            >
+              <option value="font-sans">Modern Sans (Hiện đại)</option>
+              <option value="font-serif">Classic Serif (Trang trọng)</option>
+              <option value="font-mono">Typewriter (Máy gõ)</option>
+              <option value="'MS Mincho', serif">游明朝 / Mincho (Nhật Cổ Điển)</option>
+              <option value="'MS Gothic', sans-serif">游ゴシック / Gothic (Nhật Đậm)</option>
+              <option value="'HGGothicE', sans-serif">HGP教科書体 (Giáo Khoa Thư)</option>
+              <option value="'Brush Script MT', cursive">Artistic Script (Nghệ Thuật)</option>
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* LAYOUT CHÍNH */}
       <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-6 items-start">
@@ -647,17 +717,6 @@ export default function DigitalJournalApp() {
                 <span className="text-pink-400 font-mono">{borderWidth}px</span>
               </div>
               <input type="range" min="0" max="15" value={borderWidth} onChange={(e) => handleBorderWidthChange(Number(e.target.value))} className="w-full accent-pink-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer" />
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-800">
-            <p className="text-xs font-semibold text-slate-400 mb-2">✨ Sticker Mẫu Có Sẵn:</p>
-            <div className="grid grid-cols-3 gap-2 bg-slate-950/40 p-2 rounded-xl border border-slate-800/60 mb-3">
-              {PRESET_STICKERS.map((st) => (
-                <button key={st.id} onClick={() => placeStickerToJournal(st.url)} className="aspect-square bg-slate-900 hover:bg-slate-800 rounded-lg p-1.5 border border-slate-800 flex items-center justify-center">
-                  <img src={st.url} alt="preset" className="w-full h-full object-contain pointer-events-none" />
-                </button>
-              ))}
             </div>
           </div>
 
@@ -784,9 +843,10 @@ export default function DigitalJournalApp() {
                     {isTextSelected && activeTool === "select" && (
                       <>
                         <button
-                          onMouseDown={(e) => handleRotateStart(e, note.id, "text")}
-                          onTouchStart={(e) => handleRotateStart(e, note.id, "text")}
+                          type="button"
+                          onPointerDown={(e) => handleRotateStart(e, note.id, "text")}
                           className="absolute -top-6 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing"
+                          style={{ touchAction: "none" }}
                         >
                           🔄
                         </button>
@@ -883,9 +943,10 @@ export default function DigitalJournalApp() {
                     {isSelected && activeTool === "select" && (
                       <>
                         <button
-                          onMouseDown={(e) => handleRotateStart(e, st.id, "sticker")}
-                          onTouchStart={(e) => handleRotateStart(e, st.id, "sticker")}
+                          type="button"
+                          onPointerDown={(e) => handleRotateStart(e, st.id, "sticker")}
                           className="absolute -top-6 left-1/2 -translate-x-1/2 bg-pink-500 text-white w-6 h-6 rounded-full shadow flex items-center justify-center text-xs z-50 cursor-grab active:cursor-grabbing"
+                          style={{ touchAction: "none" }}
                         >
                           🔄
                         </button>
