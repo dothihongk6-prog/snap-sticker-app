@@ -63,7 +63,7 @@ export default function DigitalJournalApp() {
 
   const [activeTool, setActiveTool] = useState<"select" | "text" | "pen" | "eraser" | "shape">("select");
   const [selectedShape, setSelectedShape] = useState<"line" | "arrow" | "rect" | "circle">("rect");
-  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [activeSheet, setActiveSheet] = useState<"tools" | "format" | "sticker" | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
@@ -122,21 +122,42 @@ export default function DigitalJournalApp() {
   const [cropBox, setCropBox] = useState({ x: 40, y: 40, width: 220, height: 220 });
 
   useEffect(() => {
-    const addGoogleTranslateScript = () => {
-      if (!document.getElementById("google-translate-script")) {
-        const script = document.createElement("script");
-        script.id = "google-translate-script";
-        script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-        document.body.appendChild(script);
-        (window as any).googleTranslateElementInit = () => {
+    const initGoogleTranslate = () => {
+      const container = document.getElementById("google_translate_element");
+      if (!container || container.querySelector(".goog-te-combo")) return;
+
+      const existingScript = document.getElementById("google-translate-script");
+
+      (window as any).googleTranslateElementInit = () => {
+        const target = document.getElementById("google_translate_element");
+        if (!target || target.querySelector(".goog-te-combo")) return;
+
+        if ((window as any).google?.translate) {
           new (window as any).google.translate.TranslateElement(
             { pageLanguage: "vi", layout: (window as any).google.translate.TranslateElement.InlineLayout.HORIZONTAL },
             "google_translate_element"
           );
-        };
+        }
+      };
+
+      if ((window as any).google?.translate) {
+        new (window as any).google.translate.TranslateElement(
+          { pageLanguage: "vi", layout: (window as any).google.translate.TranslateElement.InlineLayout.HORIZONTAL },
+          "google_translate_element"
+        );
+        return;
+      }
+
+      if (!existingScript) {
+        const script = document.createElement("script");
+        script.id = "google-translate-script";
+        script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
+        script.async = true;
+        document.body.appendChild(script);
       }
     };
-    addGoogleTranslateScript();
+
+    initGoogleTranslate();
   }, []);
 
   const journalRef = useRef<HTMLDivElement>(null);
@@ -536,234 +557,306 @@ export default function DigitalJournalApp() {
         </div>
       </header>
 
-      {/* TOOLBAR */}
-      <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-          <button onClick={() => setActiveTool("select")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "select" ? "bg-pink-600 text-white" : "text-slate-300"}`}>Con Trỏ</button>
-          <button onClick={() => setActiveTool("text")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "text" ? "bg-pink-600 text-white" : "text-slate-300"}`}>✍️ Văn Bản</button>
-          <button onClick={() => setActiveTool("pen")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "pen" ? "bg-pink-600 text-white" : "text-slate-300"}`}><PenTool className="w-3.5 h-3.5" /> Bút Vẽ</button>
-          <button onClick={() => setActiveTool("eraser")} className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${activeTool === "eraser" ? "bg-pink-600 text-white" : "text-slate-300"}`}>Tẩy</button>
+      <div className="w-full max-w-6xl relative mb-4">
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/95 p-2 shadow-xl backdrop-blur-md">
           <button
-            onClick={() => setShowAdvancedControls((prev) => !prev)}
-            className={`px-2.5 py-1.5 rounded-lg font-semibold transition-all ${showAdvancedControls ? "bg-pink-600 text-white" : "text-slate-300"}`}
+            onClick={() => setActiveSheet((prev) => (prev === "tools" ? null : "tools"))}
+            className={`rounded-xl px-3 py-2 text-[11px] font-semibold transition-all ${activeSheet === "tools" ? "bg-pink-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}
           >
-            {showAdvancedControls ? "Thu gọn" : "Tùy chọn"}
+            ✏️ Công cụ
+          </button>
+          <button
+            onClick={() => setActiveSheet((prev) => (prev === "format" ? null : "format"))}
+            className={`rounded-xl px-3 py-2 text-[11px] font-semibold transition-all ${activeSheet === "format" ? "bg-pink-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+          >
+            🎨 Định dạng
+          </button>
+          <button
+            onClick={() => setActiveSheet((prev) => (prev === "sticker" ? null : "sticker"))}
+            className={`rounded-xl px-3 py-2 text-[11px] font-semibold transition-all ${activeSheet === "sticker" ? "bg-pink-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+          >
+            🖼 Sticker
+          </button>
+          <button
+            onClick={() => setActiveSheet((prev) => (prev === "pages" ? null : "pages"))}
+            className={`rounded-xl px-3 py-2 text-[11px] font-semibold transition-all ${activeSheet === "pages" ? "bg-pink-600 text-white" : "text-slate-300 hover:bg-slate-800"}`}
+          >
+            📖 Trang sổ
+          </button>
+          <button
+            onClick={undoDraw}
+            className="ml-auto rounded-xl bg-slate-800 px-3 py-2 text-[11px] font-semibold text-slate-200 transition-all hover:bg-slate-700"
+          >
+            Hoàn tác
           </button>
         </div>
 
-        <button onClick={undoDraw} className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg flex items-center gap-1 font-semibold"><Undo2 className="w-3.5 h-3.5" /> Hoàn tác</button>
-      </div>
-
-      {showAdvancedControls && (
-        <div className="w-full max-w-6xl bg-slate-900 border border-slate-800 p-3 rounded-2xl mb-4 flex flex-wrap items-center gap-3 text-xs">
-          <div className="flex gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-            <button
-              onClick={() => {
-                if (selectedTextId) {
-                  setTextNotes((prev) =>
-                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "left" } : n))
-                  );
-                }
-              }}
-              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
-              title="Căn trái"
+        {activeSheet && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setActiveSheet(null)} />
+            <div
+              className="absolute left-0 top-full z-40 mt-2 w-[min(360px,calc(100vw-2rem))] max-h-[75vh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
             >
-              📄 Trái
-            </button>
-            <button
-              onClick={() => {
-                if (selectedTextId) {
-                  setTextNotes((prev) =>
-                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "center" } : n))
-                  );
-                }
-              }}
-              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
-              title="Căn giữa"
-            >
-              📄 Giữa
-            </button>
-            <button
-              onClick={() => {
-                if (selectedTextId) {
-                  setTextNotes((prev) =>
-                    prev.map((n) => (n.id === selectedTextId ? { ...n, align: "right" } : n))
-                  );
-                }
-              }}
-              className="px-2 py-1 hover:bg-slate-700 rounded text-xs"
-              title="Căn phải"
-            >
-              📄 Phải
-            </button>
-          </div>
-
-          {(selectedStickerId || selectedTextId) && (
-            <div className="flex flex-wrap items-center gap-2 bg-slate-950/80 px-2 py-1.5 rounded-xl border border-slate-800">
-              <span className="text-[11px] text-slate-400">🔄 Xoay:</span>
-              <button
-                onClick={() => rotateSelectedItem(-90)}
-                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
-              >
-                ↺ 90°
-              </button>
-              <button
-                onClick={() => rotateSelectedItem(90)}
-                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
-              >
-                ↻ 90°
-              </button>
-              <button
-                onClick={() => rotateSelectedItem(180)}
-                className="px-1.5 py-1 rounded bg-slate-800 text-slate-200 text-[10px] font-semibold"
-              >
-                180°
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="360"
-                value={selectedRotation}
-                onChange={(e) => updateSelectedItemRotation(Number(e.target.value))}
-                className="w-20 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
-              />
-              <span className="text-[10px] text-pink-400 font-mono w-8">{selectedRotation}°</span>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-400">🔤 Cỡ chữ:</span>
-              <input 
-                type="number" 
-                value={fontSize} 
-                onChange={(e) => setFontSize(Number(e.target.value))}
-                className="w-12 bg-slate-900 text-pink-400 text-xs text-center rounded border border-slate-700 p-0.5"
-                min="10" max="120"
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
-              <span className="text-[11px] text-slate-400">✏️ Nét bút:</span>
-              <input 
-                type="range" min="1" max="30" 
-                value={brushSize} 
-                onChange={(e) => setBrushSize(Number(e.target.value))}
-                className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
-              />
-              <span className="text-[10px] text-pink-400 font-mono w-4">{brushSize}</span>
-            </div>
-
-            <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
-              <span className="text-[11px] text-slate-400">💧 Độ rõ:</span>
-              <input 
-                type="range" min="0.1" max="1" step="0.1"
-                value={brushOpacity} 
-                onChange={(e) => setBrushOpacity(Number(e.target.value))}
-                className="w-16 accent-pink-500 h-1 bg-slate-800 rounded cursor-pointer"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-            <button onClick={() => { setActiveTool("shape"); setSelectedShape("rect"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "rect" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Square className="w-4 h-4" /></button>
-            <button onClick={() => { setActiveTool("shape"); setSelectedShape("circle"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "circle" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Circle className="w-4 h-4" /></button>
-            <button onClick={() => { setActiveTool("shape"); setSelectedShape("line"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "line" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><Minus className="w-4 h-4" /></button>
-            <button onClick={() => { setActiveTool("shape"); setSelectedShape("arrow"); }} className={`p-1.5 rounded-lg ${activeTool === "shape" && selectedShape === "arrow" ? "bg-pink-500/20 text-pink-400" : "text-slate-400"}`}><ArrowRight className="w-4 h-4" /></button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <select 
-              value={journalFont} 
-              onChange={(e) => setJournalFont(e.target.value)}
-              className="bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none cursor-pointer"
-            >
-              <option value="font-sans">Modern Sans (Hiện đại)</option>
-              <option value="font-serif">Classic Serif (Trang trọng)</option>
-              <option value="font-mono">Typewriter (Máy gõ)</option>
-              <option value="'MS Mincho', serif">游明朝 / Mincho (Nhật Cổ Điển)</option>
-              <option value="'MS Gothic', sans-serif">游ゴシック / Gothic (Nhật Đậm)</option>
-              <option value="'HGGothicE', sans-serif">HGP教科書体 (Giáo Khoa Thư)</option>
-              <option value="'Brush Script MT', cursive">Artistic Script (Nghệ Thuật)</option>
-            </select>
-          </div>
-        </div>
-      )}
-
-      {/* LAYOUT CHÍNH */}
-      <div className="w-full max-w-6xl flex flex-col lg:flex-row gap-6 items-start">
-        
-        {/* CỘT TRÁI */}
-        <div className="w-full lg:w-80 bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4 flex-shrink-0">
-          <h2 className="text-sm font-bold text-pink-400 flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Kho Sticker Cá Nhân</h2>
-
-          <div className="space-y-2">
-            <button onClick={startCamera} className="w-full py-2.5 bg-pink-600 hover:bg-pink-500 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-2"><Camera className="w-4 h-4" /> Chụp Sticker Mới</button>
-            <label className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer border border-slate-700">
-              <Upload className="w-4 h-4" /> Tải Ảnh Tách Nền...
-              <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-            </label>
-          </div>
-
-          <div className="bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-3 mb-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-pink-300">🎨 Chọn Màu Sắc</span>
-              <input type="color" value={activeColor} onChange={(e) => handleColorChange(e.target.value)} className="w-7 h-7 rounded-full border-0 cursor-pointer bg-transparent" />
-            </div>
-
-            <div className="space-y-1 pt-2 border-t border-slate-800">
-              <div className="flex justify-between text-[11px] text-slate-400">
-                <span>✨ Viền Sticker (Chọn sticker trên sổ):</span>
-                <span className="text-pink-400 font-mono">{borderWidth}px</span>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-bold text-pink-400">
+                  {activeSheet === "tools" && "Công cụ"}
+                  {activeSheet === "sticker" && "Sticker"}
+                  {activeSheet === "format" && "Định dạng"}
+                  {activeSheet === "pages" && "Trang sổ"}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSheet(null)}
+                  className="rounded-lg border border-slate-700 px-2 py-1 text-xs text-slate-300"
+                >
+                  ✕
+                </button>
               </div>
-              <input type="range" min="0" max="15" value={borderWidth} onChange={(e) => handleBorderWidthChange(Number(e.target.value))} className="w-full accent-pink-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer" />
-            </div>
-          </div>
 
-          <div className="pt-1">
-            <p className="text-xs text-slate-400 mb-2">Chạm sticker để dán vào trang sổ:</p>
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3 min-h-[160px] max-h-[220px] overflow-y-auto grid grid-cols-3 gap-2">
-              {myStickers.length === 0 ? (
-                <div className="col-span-3 text-center py-8 text-xs text-slate-500">Chưa có sticker. Chụp hoặc tải ảnh lên nhé!</div>
-              ) : (
-                myStickers.map((st) => (
-                  <div key={st.id} className="relative group aspect-square">
-                    <button onClick={() => placeStickerToJournal(st.url)} className="w-full h-full bg-slate-900 rounded-lg p-1 border border-slate-800 flex items-center justify-center overflow-hidden">
-                      <img src={st.url} alt="Sticker" className="w-full h-full object-contain" />
+              {activeSheet === "tools" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setActiveTool("select"); setActiveSheet(null); }}
+                    className={`rounded-2xl border px-3 py-3 text-left ${activeTool === "select" ? "border-pink-500 bg-pink-500/10 text-pink-300" : "border-slate-700 bg-slate-950/50 text-slate-200"}`}
+                  >
+                    <div className="text-base">↖</div>
+                    <div className="mt-1 text-xs font-semibold">Con trỏ</div>
+                  </button>
+                  <button
+                    onClick={() => { setActiveTool("text"); setActiveSheet(null); }}
+                    className={`rounded-2xl border px-3 py-3 text-left ${activeTool === "text" ? "border-pink-500 bg-pink-500/10 text-pink-300" : "border-slate-700 bg-slate-950/50 text-slate-200"}`}
+                  >
+                    <div className="text-base">✍️</div>
+                    <div className="mt-1 text-xs font-semibold">Văn bản</div>
+                  </button>
+                  <button
+                    onClick={() => { setActiveTool("pen"); setActiveSheet(null); }}
+                    className={`rounded-2xl border px-3 py-3 text-left ${activeTool === "pen" ? "border-pink-500 bg-pink-500/10 text-pink-300" : "border-slate-700 bg-slate-950/50 text-slate-200"}`}
+                  >
+                    <div className="text-base"><PenTool className="w-4 h-4" /></div>
+                    <div className="mt-1 text-xs font-semibold">Bút vẽ</div>
+                  </button>
+                  <button
+                    onClick={() => { setActiveTool("eraser"); setActiveSheet(null); }}
+                    className={`rounded-2xl border px-3 py-3 text-left ${activeTool === "eraser" ? "border-pink-500 bg-pink-500/10 text-pink-300" : "border-slate-700 bg-slate-950/50 text-slate-200"}`}
+                  >
+                    <div className="text-base">🧽</div>
+                    <div className="mt-1 text-xs font-semibold">Tẩy</div>
+                  </button>
+                  <button
+                    onClick={() => { setActiveTool("shape"); setSelectedShape("rect"); setActiveSheet(null); }}
+                    className="rounded-2xl border border-slate-700 bg-slate-950/50 px-3 py-3 text-left text-slate-200"
+                  >
+                    <div className="text-base"><Square className="w-4 h-4" /></div>
+                    <div className="mt-1 text-xs font-semibold">Hình chữ nhật</div>
+                  </button>
+                  <button
+                    onClick={() => { setActiveTool("shape"); setSelectedShape("circle"); setActiveSheet(null); }}
+                    className="rounded-2xl border border-slate-700 bg-slate-950/50 px-3 py-3 text-left text-slate-200"
+                  >
+                    <div className="text-base"><Circle className="w-4 h-4" /></div>
+                    <div className="mt-1 text-xs font-semibold">Hình tròn</div>
+                  </button>
+                </div>
+              )}
+
+              {activeSheet === "sticker" && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={startCamera} className="rounded-xl bg-pink-600 px-3 py-2 text-xs font-semibold text-white">
+                      Chụp sticker
                     </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeStickerFromLibrary(st.id);
-                      }}
-                      className="absolute -top-1 -right-1 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Xóa sticker này"
-                    >
-                      ✕
-                    </button>
+                    <label className="flex cursor-pointer items-center justify-center rounded-xl border border-slate-700 bg-slate-950/50 px-3 py-2 text-xs font-semibold text-slate-200">
+                      Tải ảnh
+                      <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                    </label>
                   </div>
-                ))
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="mb-2 text-[11px] font-semibold text-slate-400">Sticker cá nhân</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {myStickers.length === 0 ? (
+                        <div className="col-span-3 py-6 text-center text-[11px] text-slate-500">Chưa có sticker nào</div>
+                      ) : (
+                        myStickers.map((st) => (
+                          <div key={st.id} className="relative aspect-square">
+                            <button onClick={() => { placeStickerToJournal(st.url); setActiveSheet(null); }} className="h-full w-full rounded-lg border border-slate-800 bg-slate-900 p-1">
+                              <img src={st.url} alt="Sticker" className="h-full w-full object-contain" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeStickerFromLibrary(st.id);
+                              }}
+                              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white"
+                              title="Xóa sticker"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeSheet === "format" && (
+                <div className="space-y-3 text-xs">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="mb-2 text-[11px] font-semibold text-slate-400">Định dạng</div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-300">Cỡ chữ</span>
+                        <input
+                          type="number"
+                          value={fontSize}
+                          onChange={(e) => setFontSize(Number(e.target.value))}
+                          className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-pink-300"
+                          min="10"
+                          max="120"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span>Nét bút</span>
+                          <span className="text-pink-400">{brushSize}</span>
+                        </div>
+                        <input type="range" min="1" max="30" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-full accent-pink-500" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span>Độ rõ</span>
+                          <span className="text-pink-400">{brushOpacity.toFixed(1)}</span>
+                        </div>
+                        <input type="range" min="0.1" max="1" step="0.1" value={brushOpacity} onChange={(e) => setBrushOpacity(Number(e.target.value))} className="w-full accent-pink-500" />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-300">Màu đang chọn</span>
+                        <input type="color" value={activeColor} onChange={(e) => handleColorChange(e.target.value)} className="h-8 w-10 rounded border-0 bg-transparent" />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-300">Viền sticker</span>
+                        <input
+                          type="number"
+                          value={borderWidth}
+                          onChange={(e) => handleBorderWidthChange(Number(e.target.value))}
+                          className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-pink-300"
+                          min="0"
+                          max="15"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-slate-300">Căn lề văn bản</div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              if (selectedTextId) {
+                                setTextNotes((prev) => prev.map((n) => n.id === selectedTextId ? { ...n, align: "left" } : n));
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center"
+                          >
+                            Trái
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (selectedTextId) {
+                                setTextNotes((prev) => prev.map((n) => n.id === selectedTextId ? { ...n, align: "center" } : n));
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center"
+                          >
+                            Giữa
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (selectedTextId) {
+                                setTextNotes((prev) => prev.map((n) => n.id === selectedTextId ? { ...n, align: "right" } : n));
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center"
+                          >
+                            Phải
+                          </button>
+                        </div>
+                      </div>
+
+                      {(selectedStickerId || selectedTextId) && (
+                        <div className="space-y-2">
+                          <div className="text-slate-300">Xoay</div>
+                          <div className="flex gap-2">
+                            <button onClick={() => rotateSelectedItem(-90)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center">↺ 90°</button>
+                            <button onClick={() => rotateSelectedItem(90)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center">↻ 90°</button>
+                            <button onClick={() => rotateSelectedItem(180)} className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-center">180°</button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min="0"
+                              max="360"
+                              value={selectedRotation}
+                              onChange={(e) => updateSelectedItemRotation(Number(e.target.value))}
+                              className="w-full accent-pink-500"
+                            />
+                            <span className="w-8 text-right font-mono text-pink-400">{selectedRotation}°</span>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-2">
+                        <label className="text-slate-300">Font chữ</label>
+                        <select
+                          value={journalFont}
+                          onChange={(e) => setJournalFont(e.target.value)}
+                          className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-slate-200"
+                        >
+                          <option value="font-sans">Modern Sans</option>
+                          <option value="font-serif">Classic Serif</option>
+                          <option value="font-mono">Typewriter</option>
+                          <option value="'MS Mincho', serif">Mincho</option>
+                          <option value="'MS Gothic', sans-serif">Gothic</option>
+                          <option value="'HGGothicE', sans-serif">HGP</option>
+                          <option value="'Brush Script MT', cursive">Artistic Script</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeSheet === "pages" && (
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="mb-2 text-[11px] font-semibold text-slate-400">Mẫu trang sổ</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button onClick={() => setPaperBackground("lined")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "lined" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kẻ ngang</button>
+                      <button onClick={() => setPaperBackground("grid")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "grid" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kẻ ô ly</button>
+                      <button onClick={() => setPaperBackground("kraft")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "kraft" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kraft</button>
+                      <button onClick={() => setPaperBackground("white")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "white" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Trắng</button>
+                    </div>
+                    <label className="mt-3 flex cursor-pointer items-center justify-center rounded-xl border border-indigo-800/60 bg-indigo-950/60 px-3 py-2 text-xs font-semibold text-indigo-300">
+                      <ImageIcon className="mr-2 w-3.5 h-3.5" /> Tải mẫu sổ từ ảnh
+                      <input type="file" accept="image/*" onChange={handleCustomPaperUpload} className="hidden" />
+                    </label>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
+          </>
+        )}
+      </div>
 
-          <div className="pt-2 border-t border-slate-800 space-y-2">
-            <p className="text-xs font-semibold text-slate-400">Mẫu Trang Sổ:</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => setPaperBackground("lined")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "lined" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kẻ Ngang</button>
-              <button onClick={() => setPaperBackground("grid")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "grid" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kẻ Ô Ly</button>
-              <button onClick={() => setPaperBackground("kraft")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "kraft" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Kraft Vintage</button>
-              <button onClick={() => setPaperBackground("white")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold border ${paperBackground === "white" ? "border-pink-500 text-pink-400 bg-pink-500/10" : "border-slate-800 text-slate-400"}`}>Trắng Trơn</button>
-            </div>
-            <label className="w-full mt-2 py-2 bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-indigo-800/60">
-              <ImageIcon className="w-3.5 h-3.5" /> Tải Mẫu Sổ Từ Ảnh
-              <input type="file" accept="image/*" onChange={handleCustomPaperUpload} className="hidden" />
-            </label>
-          </div>
-        </div>
-
-        {/* CỘT PHẢI: CANVA SỔ */}
+      {/* LAYOUT CHÍNH */}
+      <div className="w-full max-w-6xl flex flex-col gap-6 items-start">
         <div className="flex-1 w-full">
           <div 
             ref={journalRef}
