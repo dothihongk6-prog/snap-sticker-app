@@ -63,7 +63,7 @@ export default function DigitalJournalApp() {
 
   const [activeTool, setActiveTool] = useState<"select" | "text" | "pen" | "eraser" | "shape">("select");
   const [selectedShape, setSelectedShape] = useState<"line" | "arrow" | "rect" | "circle">("rect");
-  const [activeSheet, setActiveSheet] = useState<"tools" | "format" | "sticker" | null>(null);
+  const [activeSheet, setActiveSheet] = useState<"tools" | "format" | "sticker" | "pages" | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawHistory, setDrawHistory] = useState<ImageData[]>([]);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
